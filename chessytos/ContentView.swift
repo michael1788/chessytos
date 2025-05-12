@@ -21,13 +21,14 @@ struct ChessPiece: Equatable {
     var hasMoved = false
     
     var symbol: String {
+        // Use the most standard and widely supported Unicode chess symbols
         switch type {
-        case .pawn: return "♙"
-        case .rook: return "♖"
-        case .knight: return "♘"
-        case .bishop: return "♗"
-        case .queen: return "♕"
-        case .king: return "♔"
+        case .pawn: return "♟︎"   // U+265F
+        case .rook: return "♜︎"   // U+265C
+        case .knight: return "♞︎" // U+265E
+        case .bishop: return "♝︎" // U+265D
+        case .queen: return "♛︎"  // U+265B
+        case .king: return "♚︎"   // U+265A
         }
     }
 }
@@ -50,6 +51,10 @@ class ChessGame: ObservableObject {
     @Published var possibleMoves: Set<Position> = []
     @Published var gameStatus: GameStatus = .ongoing
     @Published var capturedPieces: [ChessPiece] = []
+    @Published var isComputerThinking: Bool = false
+    
+    let playerColor: ChessPieceColor = .white
+    let computerColor: ChessPieceColor = .black
     
     enum GameStatus {
         case ongoing, check, checkmate, stalemate
@@ -94,6 +99,9 @@ class ChessGame: ObservableObject {
     }
     
     func select(position: Position) {
+        // Only allow selection if it's the player's turn
+        guard currentTurn == playerColor else { return }
+        
         // If a position is already selected
         if let selectedPos = selectedPosition {
             // If the selected position is in possible moves, move the piece
@@ -102,6 +110,11 @@ class ChessGame: ObservableObject {
                 movePiece(from: selectedPos, to: position)
                 selectedPosition = nil
                 possibleMoves = []
+                
+                // After player's move, make computer move if the game is still ongoing
+                if gameStatus == .ongoing {
+                    makeComputerMove()
+                }
                 return
             }
             
@@ -124,6 +137,42 @@ class ChessGame: ObservableObject {
         // Get valid moves and filter out those that would leave the king in check
         let allPossibleMoves = getBasicValidMoves(for: position)
         possibleMoves = allPossibleMoves.filter { !wouldMoveResultInCheck(from: position, to: $0) }
+    }
+    
+    func makeComputerMove() {
+        guard currentTurn == computerColor && gameStatus == .ongoing else { return }
+        
+        // Show thinking indicator
+        isComputerThinking = true
+        
+        // Use GCD to add a small delay to make the computer's move feel more natural
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self else { return }
+            
+            // Find all possible moves for the computer
+            var allMoves: [(from: Position, to: Position)] = []
+            
+            for row in 0..<8 {
+                for col in 0..<8 {
+                    if let piece = self.board[row][col], piece.color == self.computerColor {
+                        let position = Position(row: row, col: col)
+                        let validMoves = self.getValidMoves(for: position)
+                        
+                        for move in validMoves {
+                            allMoves.append((from: position, to: move))
+                        }
+                    }
+                }
+            }
+            
+            // Make a random move if possible
+            if let randomMove = allMoves.randomElement() {
+                self.movePiece(from: randomMove.from, to: randomMove.to)
+            }
+            
+            // Hide thinking indicator
+            self.isComputerThinking = false
+        }
     }
     
     // This gets the basic valid moves without checking if the king would be in check
@@ -571,9 +620,17 @@ struct ContentView: View {
         NavigationView {
             VStack(spacing: 10) {
                 // Status display
-                Text("Turn: \(game.currentTurn == .white ? "White" : "Black")")
-                    .font(.headline)
-                    .padding()
+                HStack {
+                    Text("Turn: \(game.currentTurn == .white ? "White (You)" : "Black (Computer)")")
+                        .font(.headline)
+                    
+                    if game.isComputerThinking {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle())
+                            .padding(.leading, 5)
+                    }
+                }
+                .padding()
                 
                 // Chess board
                 ChessBoardView(game: game)
@@ -617,7 +674,7 @@ struct ContentView: View {
                 .cornerRadius(10)
                 .padding(.bottom)
             }
-            .navigationTitle("Chess")
+            .navigationTitle("Chess vs Computer")
         }
     }
 }
@@ -658,11 +715,15 @@ struct ChessCellView: View {
     let isSelected: Bool
     let isPossibleMove: Bool
     
+    // Define board colors
+    let lightBlue = Color(red: 0.8, green: 0.9, blue: 1.0)
+    let mediumBlue = Color(red: 0.4, green: 0.6, blue: 0.9)
+    
     var body: some View {
         ZStack {
-            // Cell background
+            // Cell background - light blue and medium blue checkerboard
             Rectangle()
-                .fill((row + col) % 2 == 0 ? Color.white : Color.gray.opacity(0.6))
+                .fill((row + col) % 2 == 0 ? lightBlue : mediumBlue)
             
             // Selection highlight
             if isSelected {
@@ -677,11 +738,23 @@ struct ChessCellView: View {
                     .padding(12)
             }
             
-            // Piece
+            // Piece with more prominent colors
             if let piece = piece {
-                Text(piece.symbol)
-                    .font(.system(size: 30))
-                    .foregroundColor(piece.color == .white ? .black : .red)
+                ZStack {
+                    // Use a consistent rendering approach for all pieces
+                    // Shadow/outline for contrast
+                    Text(piece.symbol)
+                        .font(.system(size: 38))
+                        .fontWeight(.black)  // Even heavier than bold
+                        .foregroundColor(piece.color == .white ? Color.black.opacity(0.3) : Color.white.opacity(0.3))
+                        .offset(x: 1, y: 1)
+                    
+                    // Main piece
+                    Text(piece.symbol)
+                        .font(.system(size: 38))
+                        .fontWeight(.black)  // Even heavier than bold
+                        .foregroundColor(piece.color == .white ? .white : .black)
+                }
             }
         }
     }
