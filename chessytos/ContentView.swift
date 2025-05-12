@@ -154,6 +154,27 @@ class ChessGame: ObservableObject {
     func movePiece(from: Position, to: Position) {
         guard let piece = board[from.row][from.col] else { return }
         
+        // Check if this is a castling move
+        var castlingMove = false
+        if piece.type == .king && abs(from.col - to.col) > 1 {
+            castlingMove = true
+            // Determine if kingside or queenside castling
+            let isKingside = to.col > from.col
+            
+            // Move the rook as well
+            if isKingside {
+                // Kingside castling (right)
+                let rook = board[from.row][7]
+                board[from.row][from.col+1] = rook
+                board[from.row][7] = nil
+            } else {
+                // Queenside castling (left)
+                let rook = board[from.row][0]
+                board[from.row][from.col-1] = rook
+                board[from.row][0] = nil
+            }
+        }
+        
         // Check if there's a piece at the destination (capture)
         if let capturedPiece = board[to.row][to.col] {
             capturedPieces.append(capturedPiece)
@@ -494,7 +515,50 @@ class ChessGame: ObservableObject {
             }
         }
         
-        // TODO: Add castling logic here
+        // Castling logic
+        if let king = board[position.row][position.col], !king.hasMoved {
+            // Kingside castling
+            if let rookRight = board[position.row][7],
+               rookRight.type == .rook &&
+               rookRight.color == color &&
+               !rookRight.hasMoved {
+                
+                // Check if squares between king and rook are empty
+                let kingsideClear = (position.col+1...6).allSatisfy { board[position.row][$0] == nil }
+                
+                if kingsideClear {
+                    // Check if king is not in check and squares king moves through are not under attack
+                    let notInCheck = !isPositionUnderAttack(position: position, by: color.opposite)
+                    let passThroughSafe = !isPositionUnderAttack(position: Position(row: position.row, col: position.col+1), by: color.opposite) &&
+                                          !isPositionUnderAttack(position: Position(row: position.row, col: position.col+2), by: color.opposite)
+                    
+                    if notInCheck && passThroughSafe {
+                        validMoves.insert(Position(row: position.row, col: position.col+2))
+                    }
+                }
+            }
+            
+            // Queenside castling
+            if let rookLeft = board[position.row][0],
+               rookLeft.type == .rook &&
+               rookLeft.color == color &&
+               !rookLeft.hasMoved {
+                
+                // Check if squares between king and rook are empty
+                let queensideClear = (1...position.col-1).allSatisfy { board[position.row][$0] == nil }
+                
+                if queensideClear {
+                    // Check if king is not in check and squares king moves through are not under attack
+                    let notInCheck = !isPositionUnderAttack(position: position, by: color.opposite)
+                    let passThroughSafe = !isPositionUnderAttack(position: Position(row: position.row, col: position.col-1), by: color.opposite) &&
+                                          !isPositionUnderAttack(position: Position(row: position.row, col: position.col-2), by: color.opposite)
+                    
+                    if notInCheck && passThroughSafe {
+                        validMoves.insert(Position(row: position.row, col: position.col-2))
+                    }
+                }
+            }
+        }
     }
 }
 
