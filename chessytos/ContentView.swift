@@ -620,40 +620,76 @@ class ChessGame: ObservableObject {
 struct ContentView: View {
     @StateObject private var game = ChessGame()
     
+    // Checkmate/victory color scheme - blue to violet gradient
+    var victoryGradient: LinearGradient {
+        LinearGradient(
+            gradient: Gradient(colors: [
+                Color(red: 0.5, green: 0.6, blue: 1.0),
+                Color(red: 0.6, green: 0.4, blue: 0.9)
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+    
+    // Regular background - solid gray
+    var regularBackground: LinearGradient {
+        LinearGradient(
+            gradient: Gradient(colors: [Color.gray.opacity(0.2), Color.gray.opacity(0.2)]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+    
     var body: some View {
         NavigationView {
             VStack(spacing: 10) {
-                // Status display
-                HStack {
-                    Text("Turn: \(game.currentTurn == .white ? "White (You)" : "Black (Computer)")")
-                        .font(.headline)
-                    
-                    if game.isComputerThinking {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle())
-                            .padding(.leading, 5)
+                // Status display with clearer styling
+                ZStack {
+                    if game.gameStatus == .checkmate {
+                        // Use a background for the victory message
+                        Rectangle()
+                            .fill(victoryGradient)
+                            .frame(height: 50)
+                            .cornerRadius(8)
+                        
+                        Text("Victory for \(game.currentTurn.opposite == .white ? "White" : "Black")!")
+                            .font(.title2)
+                            .bold()
+                            .foregroundColor(.white)
+                    } else {
+                        Text("Turn: \(game.currentTurn == .white ? "White (You)" : "Black (Computer)")")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        
+                        if game.isComputerThinking {
+                            HStack {
+                                Spacer()
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle())
+                                    .padding(.trailing, 20)
+                            }
+                        }
                     }
                 }
-                .padding()
+                .frame(height: 50)
+                .padding(.horizontal)
                 
                 // Chess board
                 ChessBoardView(game: game)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(game.gameStatus == .checkmate ? victoryGradient : regularBackground)
+                    )
                 
                 // Captured pieces display
                 CapturedPiecesView(capturedPieces: game.capturedPieces)
                 
-                // Status message - only show for checkmate and stalemate
-                switch game.gameStatus {
-                case .checkmate:
-                    Text("Checkmate! \(game.currentTurn.opposite == .white ? "White" : "Black") wins!")
-                        .font(.title)
-                        .foregroundColor(.green)
-                case .stalemate:
+                // Status message - only stalemate now
+                if game.gameStatus == .stalemate {
                     Text("Stalemate - Draw!")
                         .font(.title)
                         .foregroundColor(.orange)
-                default:
-                    EmptyView()
                 }
                 
                 // New game button
@@ -704,8 +740,6 @@ struct ChessBoardView: View {
         }
         .aspectRatio(1, contentMode: .fit)
         .padding()
-        .background(Color.gray.opacity(0.2))
-        .cornerRadius(5)
     }
 }
 
