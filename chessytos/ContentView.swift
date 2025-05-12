@@ -111,8 +111,8 @@ class ChessGame: ObservableObject {
                 selectedPosition = nil
                 possibleMoves = []
                 
-                // After player's move, make computer move if the game is still ongoing
-                if gameStatus == .ongoing {
+                // After player's move, make computer move if the game is not checkmate or stalemate
+                if gameStatus != .checkmate && gameStatus != .stalemate {
                     makeComputerMove()
                 }
                 return
@@ -140,7 +140,8 @@ class ChessGame: ObservableObject {
     }
     
     func makeComputerMove() {
-        guard currentTurn == computerColor && gameStatus == .ongoing else { return }
+        // Only check if it's computer's turn and game is not over (checkmate/stalemate)
+        guard currentTurn == computerColor && gameStatus != .checkmate && gameStatus != .stalemate else { return }
         
         // Show thinking indicator
         isComputerThinking = true
@@ -313,7 +314,10 @@ class ChessGame: ObservableObject {
     
     private func isPositionUnderAttack(position: Position, by attackingColor: ChessPieceColor) -> Bool {
         // Check for pawn attacks
-        let pawnDirection = attackingColor == .white ? -1 : 1
+        // For pawns, we need to check in the opposite direction of their movement
+        // White pawns move up (negative row direction) but attack diagonally up
+        // Black pawns move down (positive row direction) but attack diagonally down
+        let pawnDirection = attackingColor == .white ? 1 : -1  // REVERSED direction for checking attacks
         for colOffset in [-1, 1] {
             let attackRow = position.row + pawnDirection
             let attackCol = position.col + colOffset
@@ -638,12 +642,8 @@ struct ContentView: View {
                 // Captured pieces display
                 CapturedPiecesView(capturedPieces: game.capturedPieces)
                 
-                // Status message
+                // Status message - only show for checkmate and stalemate
                 switch game.gameStatus {
-                case .check:
-                    Text("Check!")
-                        .font(.title2)
-                        .foregroundColor(.red)
                 case .checkmate:
                     Text("Checkmate! \(game.currentTurn.opposite == .white ? "White" : "Black") wins!")
                         .font(.title)
@@ -652,7 +652,7 @@ struct ContentView: View {
                     Text("Stalemate - Draw!")
                         .font(.title)
                         .foregroundColor(.orange)
-                case .ongoing:
+                default:
                     EmptyView()
                 }
                 
@@ -688,6 +688,7 @@ struct ChessBoardView: View {
                 HStack(spacing: 0) {
                     ForEach(0..<8, id: \.self) { col in
                         ChessCellView(
+                            game: game,
                             row: row,
                             col: col,
                             piece: game.board[row][col],
@@ -709,6 +710,7 @@ struct ChessBoardView: View {
 }
 
 struct ChessCellView: View {
+    @ObservedObject var game: ChessGame
     let row: Int
     let col: Int
     let piece: ChessPiece?
@@ -718,12 +720,39 @@ struct ChessCellView: View {
     // Define board colors
     let lightBlue = Color(red: 0.8, green: 0.9, blue: 1.0)
     let mediumBlue = Color(red: 0.4, green: 0.6, blue: 0.9)
+    // Check highlight colors - blue to violet
+    let checkHighlight = LinearGradient(
+        gradient: Gradient(colors: [
+            Color(red: 0.5, green: 0.6, blue: 1.0),
+            Color(red: 0.6, green: 0.4, blue: 0.9)
+        ]),
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    
+    // Determine if this cell contains a king in check
+    var isKingInCheck: Bool {
+        guard let piece = piece,
+              piece.type == .king,
+              game.gameStatus == .check,
+              game.currentTurn == piece.color else {
+            return false
+        }
+        return true
+    }
     
     var body: some View {
         ZStack {
             // Cell background - light blue and medium blue checkerboard
             Rectangle()
                 .fill((row + col) % 2 == 0 ? lightBlue : mediumBlue)
+            
+            // Check highlight for king
+            if isKingInCheck {
+                Rectangle()
+                    .fill(checkHighlight)
+                    .opacity(0.7)
+            }
             
             // Selection highlight
             if isSelected {
