@@ -1363,7 +1363,7 @@ struct ContentView: View {
             ZStack {
                 dynamicBackground
                 
-                VStack(spacing: 16) {
+                VStack(spacing: 10) {
                     statusCard
                     
                     // Black Player Info (Top)
@@ -1387,7 +1387,7 @@ struct ContentView: View {
                         game: game
                     )
                     
-                    Spacer()
+                    Spacer(minLength: 10)
                     
                     gameControls
                         .padding(.horizontal)
@@ -1537,16 +1537,18 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Chess Board and Cell Views (keeping existing implementations)
+// MARK: - Chess Board and Cell Views (MODIFIED)
 
 struct ChessBoardView: View {
     @ObservedObject var game: ChessGame
     
     var body: some View {
         GeometryReader { geometry in
-            VStack(spacing: 1) {
+            let cellSize = geometry.size.width / 8.0
+            
+            VStack(spacing: 0) { // Set spacing to 0 for a seamless grid
                 ForEach(0..<8, id: \.self) { row in
-                    HStack(spacing: 1) {
+                    HStack(spacing: 0) { // Set spacing to 0 for a seamless grid
                         ForEach(0..<8, id: \.self) { col in
                             ChessCellView(
                                 game: game,
@@ -1555,9 +1557,10 @@ struct ChessBoardView: View {
                                 piece: game.board[row][col],
                                 isSelected: game.selectedPosition?.row == row && game.selectedPosition?.col == col,
                                 isPossibleMove: game.possibleMoves.contains(Position(row: row, col: col)),
-                                isKingInCheck: game.kingInCheckPosition == Position(row: row, col: col)
+                                isKingInCheck: game.kingInCheckPosition == Position(row: row, col: col),
+                                size: cellSize // Pass calculated size
                             )
-                            .frame(width: geometry.size.width / 8, height: geometry.size.width / 8)
+                            .frame(width: cellSize, height: cellSize)
                             .onTapGesture {
                                 withAnimation(.easeInOut(duration: 0.2)) {
                                     game.select(position: Position(row: row, col: col))
@@ -1569,7 +1572,7 @@ struct ChessBoardView: View {
             }
         }
         .aspectRatio(1, contentMode: .fit)
-        .padding(16)
+        .padding(8) // Reduced padding to make board bigger
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(.regularMaterial)
@@ -1631,6 +1634,7 @@ struct ChessCellView: View {
     let isSelected: Bool
     let isPossibleMove: Bool
     let isKingInCheck: Bool
+    let size: CGFloat // Add size property
     
     var cellBaseColor: Color {
         (row + col) % 2 == 0 ?
@@ -1693,7 +1697,7 @@ struct ChessCellView: View {
             }
             
             if let piece = piece {
-                ChessPieceView(piece: piece, size: 43.56)
+                ChessPieceView(piece: piece, size: size * 0.8) // Use relative size
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .scaleEffect(isSelected ? 1.1 : 1.0)
                     .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
