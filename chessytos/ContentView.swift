@@ -21,15 +21,15 @@ struct ChessPiece: Equatable {
     var hasMoved = false
     
     var symbol: String {
-        // Using the same outline design for both white and black pieces.
+        // Using filled designs for better visibility.
         // The color is applied in the view layer.
         switch type {
-        case .pawn: return "♙"
-        case .rook: return "♖"
-        case .knight: return "♘"
-        case .bishop: return "♗"
-        case .queen: return "♕"
-        case .king: return "♔"
+        case .pawn: return "♟︎"
+        case .rook: return "♜"
+        case .knight: return "♞"
+        case .bishop: return "♝"
+        case .queen: return "♛"
+        case .king: return "♚"
         }
     }
 }
@@ -1058,6 +1058,7 @@ struct CapturedPiecesView: View {
         .frame(minHeight: 80)
     }
 }
+
 
 
 
