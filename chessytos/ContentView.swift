@@ -945,28 +945,13 @@ struct ChessCellView: View {
                     .animation(.easeInOut(duration: 0.3), value: isSelected)
             }
             
-            // Possible move indicator with glass orb effect
+            // Possible move indicator - a subtle glow on the square
             if isPossibleMove {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                Color(red: 0.6, green: 0.85, blue: 0.95).opacity(0.8),
-                                Color.cyan.opacity(0.5),
-                                Color.clear
-                            ],
-                            center: .center,
-                            startRadius: 2,
-                            endRadius: 15
-                        )
-                    )
-                    .frame(width: 30, height: 30)
-                    .overlay(
-                        Circle()
-                            .stroke(Color(red: 0.6, green: 0.85, blue: 0.95).opacity(0.9), lineWidth: 2)
-                    )
-                    .scaleEffect(isPossibleMove ? 1.0 : 0.5)
-                    .animation(.spring(response: 0.4, dampingFraction: 0.6), value: isPossibleMove)
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color(red: 0.6, green: 0.85, blue: 0.95), lineWidth: 2)
+                    .shadow(color: Color(red: 0.6, green: 0.85, blue: 0.95), radius: 3, x: 0, y: 0)
+                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.3), value: isPossibleMove)
             }
             
             // Chess piece with enhanced 3D effect
@@ -1073,6 +1058,7 @@ struct CapturedPiecesView: View {
         .frame(minHeight: 80)
     }
 }
+
 
 
 
