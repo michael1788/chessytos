@@ -1470,6 +1470,38 @@ struct ChessBoardView: View {
     }
 }
 
+struct ChessPieceView: View {
+    let piece: ChessPiece
+    let size: CGFloat
+
+    var body: some View {
+        ZStack {
+            Text(piece.symbol)
+                .font(.system(size: size, weight: .black, design: .default))
+                .foregroundColor(.black.opacity(0.3))
+                .offset(x: 2, y: 2)
+                .blur(radius: 1)
+        
+            Text(piece.symbol)
+                .font(.system(size: size, weight: .black, design: .default))
+                .foregroundColor(piece.color == .white ? .white : .black)
+                .overlay(
+                    Text(piece.symbol)
+                        .font(.system(size: size, weight: .black, design: .default))
+                        .foregroundColor(.white.opacity(0.6))
+                        .mask(
+                            LinearGradient(
+                                colors: [.white, .clear],
+                                startPoint: .topLeading,
+                                endPoint: .center
+                            )
+                        )
+                )
+                .shadow(color: .black.opacity(0.3), radius: 2, x: 1, y: 1)
+        }
+    }
+}
+
 struct ChessCellView: View {
     @ObservedObject var game: ChessGame
     let row: Int
@@ -1540,43 +1572,11 @@ struct ChessCellView: View {
             }
             
             if let piece = piece {
-                ChessPieceView(piece: piece, size: 36)
+                ChessPieceView(piece: piece, size: 43.56)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .scaleEffect(isSelected ? 1.1 : 1.0)
                     .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
             }
-        }
-    }
-}
-
-struct ChessPieceView: View {
-    let piece: ChessPiece
-    let size: CGFloat
-
-    var body: some View {
-        ZStack {
-            Text(piece.symbol)
-                .font(.system(size: size, weight: .black, design: .default))
-                .foregroundColor(.black.opacity(0.3))
-                .offset(x: 2, y: 2)
-                .blur(radius: 1)
-        
-            Text(piece.symbol)
-                .font(.system(size: size, weight: .black, design: .default))
-                .foregroundColor(piece.color == .white ? .white : .black)
-                .overlay(
-                    Text(piece.symbol)
-                        .font(.system(size: size, weight: .black, design: .default))
-                        .foregroundColor(.white.opacity(0.6))
-                        .mask(
-                            LinearGradient(
-                                colors: [.white, .clear],
-                                startPoint: .topLeading,
-                                endPoint: .center
-                            )
-                        )
-                )
-                .shadow(color: .black.opacity(0.3), radius: 2, x: 1, y: 1)
         }
     }
 }
@@ -1587,7 +1587,7 @@ struct CapturedPiecesView: View {
     var body: some View {
         HStack(spacing: 4) {
             ForEach(Array(pieces.enumerated()), id: \.offset) { _, piece in
-                ChessPieceView(piece: piece, size: 20)
+                ChessPieceView(piece: piece, size: 24.2)
                     .opacity(0.8)
             }
         }
