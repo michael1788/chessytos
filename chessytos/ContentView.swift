@@ -660,9 +660,13 @@ struct ContentView: View {
             ZStack {
                 dynamicBackground
                 
-                VStack(spacing: 20) {
+                VStack(spacing: 16) { // Increased spacing for a better layout
                     // Status card with liquid glass effect
                     statusCard
+                        .padding(.horizontal)
+                    
+                    // White pieces captured by Black
+                    CapturedPiecesView(pieces: game.capturedPieces.filter { $0.color == .white })
                         .padding(.horizontal)
                     
                     // Chess board with enhanced liquid glass styling
@@ -671,10 +675,11 @@ struct ContentView: View {
                         .scaleEffect(game.gameStatus == .checkmate ? 1.02 : 1.0)
                         .animation(.spring(response: 0.6, dampingFraction: 0.7), value: game.gameStatus)
                     
-                    // Captured pieces in a glass container
-                    CapturedPiecesView(capturedPieces: game.capturedPieces)
-                        .liquidGlass()
+                    // Black pieces captured by White
+                    CapturedPiecesView(pieces: game.capturedPieces.filter { $0.color == .black })
                         .padding(.horizontal)
+                    
+                    Spacer() // Pushes the game controls to the bottom
                     
                     // Game controls
                     gameControls
@@ -1001,65 +1006,15 @@ struct ChessPieceView: View {
 }
 
 struct CapturedPiecesView: View {
-    let capturedPieces: [ChessPiece]
-    
+    let pieces: [ChessPiece]
+
     var body: some View {
-        VStack(spacing: 12) {
-            Text("Captured Pieces")
-                .font(.headline)
-                .foregroundColor(.primary)
-            
-            HStack(spacing: 20) {
-                // White's captured pieces (Black pieces that were captured)
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Circle()
-                            .fill(Color.black)
-                            .frame(width: 8, height: 8)
-                        Text("Black captured:")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 4) {
-                        ForEach(Array(capturedPieces.filter { $0.color == .black }.enumerated()), id: \.offset) { index, piece in
-                            ChessPieceView(piece: piece, size: 20)
-                                .opacity(0.7)
-                                .transition(.scale.combined(with: .opacity))
-                        }
-                    }
-                }
-                
-                Spacer()
-                
-                // Black's captured pieces (White pieces that were captured)
-                VStack(alignment: .trailing, spacing: 8) {
-                    HStack {
-                        Text("White captured:")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Circle()
-                            .fill(Color.white)
-                            .stroke(Color.black, lineWidth: 1)
-                            .frame(width: 8, height: 8)
-                    }
-                    
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 4) {
-                        ForEach(Array(capturedPieces.filter { $0.color == .white }.enumerated()), id: \.offset) { index, piece in
-                            ChessPieceView(piece: piece, size: 20)
-                                .opacity(0.7)
-                                .transition(.scale.combined(with: .opacity))
-                        }
-                    }
-                }
+        HStack(spacing: 4) {
+            ForEach(Array(pieces.enumerated()), id: \.offset) { _, piece in
+                ChessPieceView(piece: piece, size: 20)
+                    .opacity(0.8)
             }
         }
-        .padding()
-        .frame(minHeight: 80)
+        .frame(height: 25) // Use a fixed height to prevent layout from shifting when pieces are captured.
     }
 }
-
-
-
-
-
