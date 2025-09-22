@@ -53,6 +53,7 @@ class ChessGame: ObservableObject {
     @Published var gameStatus: GameStatus = .ongoing
     @Published var capturedPieces: [ChessPiece] = []
     @Published var isComputerThinking: Bool = false
+    @Published var kingInCheckPosition: Position? = nil // Tracks the king in check
     
     let playerColor: ChessPieceColor = .white
     let computerColor: ChessPieceColor = .black
@@ -100,6 +101,17 @@ class ChessGame: ObservableObject {
         // Setup kings
         board[0][4] = ChessPiece(type: .king, color: .black)
         board[7][4] = ChessPiece(type: .king, color: .white)
+    }
+
+    func reset() {
+        setupBoard()
+        currentTurn = .white
+        selectedPosition = nil
+        possibleMoves = []
+        gameStatus = .ongoing
+        capturedPieces = []
+        isComputerThinking = false
+        kingInCheckPosition = nil
     }
     
     func select(position: Position) {
@@ -151,7 +163,7 @@ class ChessGame: ObservableObject {
         isComputerThinking = true
         
         // Use GCD to add a small delay to make the computer's move feel more natural
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             guard let self = self else { return }
             
             // Find all possible moves for the computer
@@ -300,10 +312,12 @@ class ChessGame: ObservableObject {
             if hasLegalMoves { break }
         }
         
-        // Update game status
+        // Update game status and kingInCheckPosition
         if isInCheck {
+            kingInCheckPosition = kingPosition
             gameStatus = hasLegalMoves ? .check : .checkmate
         } else {
+            kingInCheckPosition = nil
             gameStatus = hasLegalMoves ? .ongoing : .stalemate
         }
     }
@@ -491,8 +505,8 @@ class ChessGame: ObservableObject {
             // Kingside castling
             if let rookRight = board[position.row][7],
                rookRight.type == .rook &&
-                rookRight.color == color &&
-                !rookRight.hasMoved {
+               rookRight.color == color &&
+               !rookRight.hasMoved {
                 
                 // Check if squares between king and rook are empty
                 let kingsideClear = (position.col+1...6).allSatisfy { board[position.row][$0] == nil }
@@ -512,8 +526,8 @@ class ChessGame: ObservableObject {
             // Queenside castling
             if let rookLeft = board[position.row][0],
                rookLeft.type == .rook &&
-                rookLeft.color == color &&
-                !rookLeft.hasMoved {
+               rookLeft.color == color &&
+               !rookLeft.hasMoved {
                 
                 // Check if squares between king and rook are empty
                 let queensideClear = (1...position.col-1).allSatisfy { board[position.row][$0] == nil }
@@ -640,12 +654,6 @@ struct ContentView: View {
                 Color(red: 0.6, green: 0.4, blue: 0.9),
                 Color(red: 0.5, green: 0.7, blue: 0.95)
             ]
-        case .check:
-            return [
-                Color(red: 1.0, green: 0.6, blue: 0.4),
-                Color(red: 0.9, green: 0.4, blue: 0.6),
-                Color(red: 0.95, green: 0.7, blue: 0.5)
-            ]
         default:
             return [
                 Color(red: 0.1, green: 0.15, blue: 0.25),
@@ -663,7 +671,6 @@ struct ContentView: View {
                 VStack(spacing: 16) { // Increased spacing for a better layout
                     // Status card with liquid glass effect
                     statusCard
-                        .padding(.horizontal)
                     
                     // White pieces captured by Black
                     CapturedPiecesView(pieces: game.capturedPieces.filter { $0.color == .white })
@@ -693,74 +700,45 @@ struct ContentView: View {
     }
     
     var statusCard: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 8) {
             if game.gameStatus == .checkmate {
-                HStack {
+                HStack(spacing: 8) {
                     Image(systemName: "crown.fill")
                         .foregroundColor(.yellow)
-                        .font(.title2)
                     
                     Text("Victory for \(game.currentTurn.opposite == .white ? "White" : "Black")!")
-                        .font(.title2)
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
-                    
+
                     Image(systemName: "crown.fill")
                         .foregroundColor(.yellow)
-                        .font(.title2)
                 }
-                .padding(.vertical, 4)
-            } else {
-                HStack {
-                    Circle()
-                        .fill(game.currentTurn == .white ? Color.white : Color.black)
-                        .frame(width: 12, height: 12)
-                        .overlay(
-                            Circle()
-                                .stroke(game.currentTurn == .white ? Color.black : Color.white, lineWidth: 1)
-                        )
-                    
-                    Text("Turn: \(game.currentTurn == .white ? "White (You)" : "Black (Computer)")")
-                        .font(.headline)
-                        .foregroundColor(.primary)
-                    
-                    Spacer()
+                .font(.title3)
+            } else if game.gameStatus == .stalemate {
+                Text("Stalemate - Draw!")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+            } else if game.gameStatus == .check {
+                Text("Check")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.orange)
+            } else { // Ongoing
+                HStack(spacing: 8) {
+                    Text(game.currentTurn == .white ? "White" : "Black")
+                        .font(.title3)
+                        .fontWeight(.semibold)
                     
                     if game.isComputerThinking {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .blue))
-                                .scaleEffect(0.8)
-                            
-                            Text("Thinking...")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .secondary))
+                            .scaleEffect(0.8)
                     }
                 }
             }
-            
-            if game.gameStatus == .check {
-                HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
-                    Text("Check!")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.orange)
-                }
-            } else if game.gameStatus == .stalemate {
-                HStack {
-                    Image(systemName: "equal.circle.fill")
-                        .foregroundColor(.yellow)
-                    Text("Stalemate - Draw!")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.yellow)
-                }
-            }
         }
-        .padding()
+        .padding(.vertical, 12)
+        .padding(.horizontal, 30)
         .liquidGlass()
     }
     
@@ -798,12 +776,7 @@ struct ContentView: View {
     }
     
     func resetGame() {
-        game.setupBoard()
-        game.currentTurn = .white
-        game.selectedPosition = nil
-        game.possibleMoves = []
-        game.gameStatus = .ongoing
-        game.capturedPieces = []
+        game.reset()
     }
 }
 
@@ -822,7 +795,8 @@ struct ChessBoardView: View {
                                 col: col,
                                 piece: game.board[row][col],
                                 isSelected: game.selectedPosition?.row == row && game.selectedPosition?.col == col,
-                                isPossibleMove: game.possibleMoves.contains(Position(row: row, col: col))
+                                isPossibleMove: game.possibleMoves.contains(Position(row: row, col: col)),
+                                isKingInCheck: game.kingInCheckPosition == Position(row: row, col: col)
                             )
                             .frame(width: geometry.size.width / 8, height: geometry.size.width / 8)
                             .onTapGesture {
@@ -865,23 +839,13 @@ struct ChessCellView: View {
     let piece: ChessPiece?
     let isSelected: Bool
     let isPossibleMove: Bool
+    let isKingInCheck: Bool
     
     // Enhanced color scheme with liquid glass effects
     var cellBaseColor: Color {
         (row + col) % 2 == 0 ?
         Color(red: 0.8, green: 0.82, blue: 0.85) : // Darker light squares
         Color(red: 0.5, green: 0.55, blue: 0.6)   // Darker dark squares
-    }
-    
-    // Determine if this cell contains a king in check
-    var isKingInCheck: Bool {
-        guard let piece = piece,
-              piece.type == .king,
-              game.gameStatus == .check,
-              game.currentTurn == piece.color else {
-            return false
-        }
-        return true
     }
     
     var body: some View {
@@ -904,27 +868,10 @@ struct ChessCellView: View {
                         )
                 )
             
-            // Check highlight with pulsing animation
+            // Check highlight (New Style)
             if isKingInCheck {
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                Color.red.opacity(0.6),
-                                Color.orange.opacity(0.3),
-                                Color.clear
-                            ],
-                            center: .center,
-                            startRadius: 5,
-                            endRadius: 25
-                        )
-                    )
-                    .scaleEffect(isKingInCheck ? 1.1 : 1.0)
-                    .animation(
-                        .easeInOut(duration: 0.8)
-                        .repeatForever(autoreverses: true),
-                        value: isKingInCheck
-                    )
+                    .stroke(Color.orange.opacity(0.8), lineWidth: 3)
             }
             
             // Selection highlight with liquid glass glow
@@ -1018,3 +965,6 @@ struct CapturedPiecesView: View {
         .frame(height: 25) // Use a fixed height to prevent layout from shifting when pieces are captured.
     }
 }
+
+
+
