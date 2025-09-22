@@ -1634,7 +1634,7 @@ struct ChessCellView: View {
     let isSelected: Bool
     let isPossibleMove: Bool
     let isKingInCheck: Bool
-    let size: CGFloat // Add size property
+    let size: CGFloat // This is the cell's size
     
     var cellBaseColor: Color {
         (row + col) % 2 == 0 ?
@@ -1684,7 +1684,7 @@ struct ChessCellView: View {
                         RoundedRectangle(cornerRadius: 8)
                             .fill(Color.blue.opacity(0.1))
                     )
-                    .scaleEffect(1.05)
+                    // .scaleEffect(1.05) // REMOVED to keep square size consistent
                     .animation(.easeInOut(duration: 0.3), value: isSelected)
             }
             
@@ -1697,7 +1697,7 @@ struct ChessCellView: View {
             }
             
             if let piece = piece {
-                ChessPieceView(piece: piece, size: size * 0.8) // Use relative size
+                ChessPieceView(piece: piece, size: size * 0.88)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .scaleEffect(isSelected ? 1.1 : 1.0)
                     .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
