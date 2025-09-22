@@ -168,6 +168,11 @@ class ChessGame: ObservableObject {
     @Published var isComputerThinking: Bool = false
     @Published var kingInCheckPosition: Position? = nil
     
+    // MARK: - Timer Properties
+    @Published var whiteTimeRemaining: TimeInterval = 180
+    @Published var blackTimeRemaining: TimeInterval = 180
+    private var gameTimer: Timer?
+    
     // MARK: - Trivia Integration Properties
     @Published var showTriviaChallenge: Bool = false
     @Published var pendingMove: (from: Position, to: Position)? = nil
@@ -235,6 +240,51 @@ class ChessGame: ObservableObject {
         pendingMove = nil
         consecutiveCorrectAnswers = 0
         totalQuestionsAnswered = 0
+        
+        // Reset and start timer
+        whiteTimeRemaining = 180
+        blackTimeRemaining = 180
+        stopGameTimer()
+        startGameTimer()
+    }
+    
+    // MARK: - Timer Management
+    func startGameTimer() {
+        stopGameTimer() // Ensure no duplicate timers are running
+        gameTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            
+            // The timer should only run while the game is actively being played
+            guard self.gameStatus == .ongoing || self.gameStatus == .check else {
+                self.stopGameTimer()
+                return
+            }
+            
+            if self.currentTurn == .white {
+                if self.whiteTimeRemaining > 0 {
+                    self.whiteTimeRemaining -= 1
+                }
+                if self.whiteTimeRemaining <= 0 {
+                    self.whiteTimeRemaining = 0
+                    self.gameStatus = .checkmate // Black wins on time
+                    self.stopGameTimer()
+                }
+            } else { // Black's turn
+                if self.blackTimeRemaining > 0 {
+                    self.blackTimeRemaining -= 1
+                }
+                if self.blackTimeRemaining <= 0 {
+                    self.blackTimeRemaining = 0
+                    self.gameStatus = .checkmate // White wins on time
+                    self.stopGameTimer()
+                }
+            }
+        }
+    }
+
+    func stopGameTimer() {
+        gameTimer?.invalidate()
+        gameTimer = nil
     }
     
     // MARK: - Enhanced Selection Logic with Trivia Integration
@@ -457,6 +507,11 @@ class ChessGame: ObservableObject {
         } else {
             kingInCheckPosition = nil
             gameStatus = hasLegalMoves ? .ongoing : .stalemate
+        }
+        
+        // Stop the timer if the game has concluded
+        if gameStatus == .checkmate || gameStatus == .stalemate {
+            stopGameTimer()
         }
     }
     
@@ -1191,6 +1246,55 @@ extension View {
     }
 }
 
+// MARK: - Player Info View (Timer and Captured Pieces)
+
+struct PlayerInfoView: View {
+    var color: ChessPieceColor
+    var timeRemaining: TimeInterval
+    var capturedPieces: [ChessPiece]
+    @ObservedObject var game: ChessGame
+
+    private func formatTime(_ totalSeconds: TimeInterval) -> String {
+        let seconds = Int(ceil(totalSeconds))
+        let minutes = seconds / 60
+        let remainingSeconds = seconds % 60
+        return String(format: "%02d:%02d", minutes, remainingSeconds)
+    }
+
+    var body: some View {
+        HStack {
+            if color == .white {
+                // For the white player (bottom), show captured pieces on the left
+                CapturedPiecesView(pieces: capturedPieces)
+                Spacer()
+                timerDisplay
+            } else {
+                // For the black player (top), show timer on the left
+                timerDisplay
+                Spacer()
+                CapturedPiecesView(pieces: capturedPieces)
+            }
+        }
+        .padding(.horizontal)
+    }
+    
+    private var timerDisplay: some View {
+        Text(formatTime(timeRemaining))
+            .font(.system(size: 24, weight: .bold, design: .monospaced))
+            .foregroundColor(timeRemaining < 10 && timeRemaining > 0 ? .red : .white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(
+                // Highlight the timer for the active player
+                game.currentTurn == color && game.gameStatus != .checkmate && game.gameStatus != .stalemate ?
+                Color.blue.opacity(0.4) : Color.black.opacity(0.3)
+            )
+            .cornerRadius(10)
+            .animation(.easeInOut, value: game.currentTurn)
+    }
+}
+
+
 // MARK: - Main Content View (Enhanced)
 
 struct ContentView: View {
@@ -1262,16 +1366,26 @@ struct ContentView: View {
                 VStack(spacing: 16) {
                     statusCard
                     
-                    CapturedPiecesView(pieces: game.capturedPieces.filter { $0.color == .white })
-                        .padding(.horizontal)
+                    // Black Player Info (Top)
+                    PlayerInfoView(
+                        color: .black,
+                        timeRemaining: game.blackTimeRemaining,
+                        capturedPieces: game.capturedPieces.filter { $0.color == .white },
+                        game: game
+                    )
                     
                     ChessBoardView(game: game)
                         .liquidGlass()
                         .scaleEffect(game.gameStatus == .checkmate ? 1.02 : 1.0)
                         .animation(.spring(response: 0.6, dampingFraction: 0.7), value: game.gameStatus)
                     
-                    CapturedPiecesView(pieces: game.capturedPieces.filter { $0.color == .black })
-                        .padding(.horizontal)
+                    // White Player Info (Bottom)
+                    PlayerInfoView(
+                        color: .white,
+                        timeRemaining: game.whiteTimeRemaining,
+                        capturedPieces: game.capturedPieces.filter { $0.color == .black },
+                        game: game
+                    )
                     
                     Spacer()
                     
@@ -1282,6 +1396,10 @@ struct ContentView: View {
             }
             .navigationTitle("Chess with Trivia")
             .navigationBarTitleDisplayMode(.large)
+            .onAppear {
+                // Start a new game and timer when the view first appears
+                game.reset()
+            }
         }
         .fullScreenCover(isPresented: $game.showTriviaChallenge) {
             ChessTriviaChallenge(game: game, isPresented: $game.showTriviaChallenge)
@@ -1295,7 +1413,10 @@ struct ContentView: View {
                     Image(systemName: "crown.fill")
                         .foregroundColor(.yellow)
                     
-                    Text("Victory for \(game.currentTurn.opposite == .white ? "White" : "Black")!")
+                    let winnerText = game.currentTurn.opposite == .white ? "White" : "Black"
+                    let reasonText = (game.whiteTimeRemaining <= 0 || game.blackTimeRemaining <= 0) ? "on Time" : "by Checkmate"
+
+                    Text("Victory for \(winnerText) \(reasonText)!")
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
 
@@ -1314,7 +1435,7 @@ struct ContentView: View {
                     .foregroundColor(.orange)
             } else {
                 HStack(spacing: 8) {
-                    Text(game.currentTurn == .white ? "White" : "Black")
+                    Text(game.currentTurn == .white ? "White's Turn" : "Black's Turn")
                         .font(.title3)
                         .fontWeight(.semibold)
                     
