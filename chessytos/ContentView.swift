@@ -1,7 +1,122 @@
 import UIKit
 import SwiftUI
 
-// MARK: - Chess Game Models
+// MARK: - Trivia Data Structures (from your other game)
+
+struct TriviaQuestion: Codable {
+    let question: String
+    let correct_answer: String
+    let incorrect_answers: [String]
+}
+
+struct TriviaResponse: Codable {
+    let questions: [TriviaQuestion]
+}
+
+struct TriviaQuestionWithCategory: Codable {
+    let question: String
+    let correct_answer: String
+    let incorrect_answers: [String]
+    let category: String
+    
+    func toTriviaQuestion() -> TriviaQuestion {
+        return TriviaQuestion(
+            question: question,
+            correct_answer: correct_answer,
+            incorrect_answers: incorrect_answers
+        )
+    }
+}
+
+struct MultipleChoiceQuestion: Codable {
+    let question: String
+    let options: [String]
+    let correctAnswer: Int
+}
+
+struct TriviaSource {
+    let id: String
+    let name: String
+    let description: String
+    let fileResource: String
+    let fileExtension: String
+    let isOpenTrivia: Bool
+}
+
+struct OpenTriviaCategory {
+    let id: Int
+    let name: String
+}
+
+// MARK: - Trivia Source Manager
+
+class TriviaSourceManager: ObservableObject {
+    static let shared = TriviaSourceManager()
+    
+    @Published var availableSources: [TriviaSource] = []
+    @Published var selectedOpenTriviaCategories: Set<Int> = []
+    
+    let availableOpenTriviaCategories: [OpenTriviaCategory] = [
+        OpenTriviaCategory(id: 9, name: "General Knowledge"),
+        OpenTriviaCategory(id: 17, name: "Science & Nature"),
+        OpenTriviaCategory(id: 18, name: "Science: Computers"),
+        OpenTriviaCategory(id: 19, name: "Science: Mathematics"),
+        OpenTriviaCategory(id: 20, name: "Mythology"),
+        OpenTriviaCategory(id: 21, name: "Sports"),
+        OpenTriviaCategory(id: 22, name: "Geography"),
+        OpenTriviaCategory(id: 23, name: "History"),
+        OpenTriviaCategory(id: 24, name: "Politics"),
+        OpenTriviaCategory(id: 25, name: "Art"),
+        OpenTriviaCategory(id: 26, name: "Celebrities"),
+        OpenTriviaCategory(id: 27, name: "Animals"),
+        OpenTriviaCategory(id: 28, name: "Vehicles")
+    ]
+    
+    private init() {
+        loadDefaultSources()
+        loadDefaultCategories()
+    }
+    
+    private func loadDefaultSources() {
+        availableSources = [
+            TriviaSource(
+                id: "opentrivia",
+                name: "OpenTrivia Database",
+                description: "General trivia questions",
+                fileResource: "opentrivia",
+                fileExtension: "json",
+                isOpenTrivia: true
+            )
+        ]
+    }
+    
+    private func loadDefaultCategories() {
+        // Select first few categories by default
+        selectedOpenTriviaCategories = Set([9, 17, 18, 22, 23])
+    }
+}
+
+// MARK: - Bundle Extension for File Loading
+
+extension Bundle {
+    static func loadFile(named fileName: String, withExtension fileExtension: String) -> Data? {
+        guard let url = Bundle.main.url(forResource: fileName, withExtension: fileExtension) else {
+            print("❌ Could not find file: \(fileName).\(fileExtension)")
+            return nil
+        }
+        
+        do {
+            let data = try Data(contentsOf: url)
+            print("✅ Successfully loaded file: \(fileName).\(fileExtension)")
+            return data
+        } catch {
+            print("❌ Error loading file \(fileName).\(fileExtension): \(error)")
+            return nil
+        }
+    }
+}
+
+// MARK: - Chess Game Models (Enhanced)
 
 enum ChessPieceType {
     case pawn, rook, knight, bishop, queen, king
@@ -21,8 +136,6 @@ struct ChessPiece: Equatable {
     var hasMoved = false
     
     var symbol: String {
-        // Using filled designs for better visibility.
-        // The color is applied in the view layer.
         switch type {
         case .pawn: return "♟︎"
         case .rook: return "♜"
@@ -43,7 +156,7 @@ struct Position: Hashable {
     }
 }
 
-// MARK: - Chess Game Logic
+// MARK: - Enhanced Chess Game Logic with Trivia Integration
 
 class ChessGame: ObservableObject {
     @Published var board: [[ChessPiece?]] = Array(repeating: Array(repeating: nil, count: 8), count: 8)
@@ -53,7 +166,14 @@ class ChessGame: ObservableObject {
     @Published var gameStatus: GameStatus = .ongoing
     @Published var capturedPieces: [ChessPiece] = []
     @Published var isComputerThinking: Bool = false
-    @Published var kingInCheckPosition: Position? = nil // Tracks the king in check
+    @Published var kingInCheckPosition: Position? = nil
+    
+    // MARK: - Trivia Integration Properties
+    @Published var showTriviaChallenge: Bool = false
+    @Published var pendingMove: (from: Position, to: Position)? = nil
+    @Published var triviaEnabled: Bool = true
+    @Published var consecutiveCorrectAnswers: Int = 0
+    @Published var totalQuestionsAnswered: Int = 0
     
     let playerColor: ChessPieceColor = .white
     let computerColor: ChessPieceColor = .black
@@ -67,7 +187,6 @@ class ChessGame: ObservableObject {
     }
     
     func setupBoard() {
-        // Reset board
         board = Array(repeating: Array(repeating: nil, count: 8), count: 8)
         
         // Setup pawns
@@ -112,29 +231,28 @@ class ChessGame: ObservableObject {
         capturedPieces = []
         isComputerThinking = false
         kingInCheckPosition = nil
+        showTriviaChallenge = false
+        pendingMove = nil
+        consecutiveCorrectAnswers = 0
+        totalQuestionsAnswered = 0
     }
     
+    // MARK: - Enhanced Selection Logic with Trivia Integration
     func select(position: Position) {
-        // Only allow selection if it's the player's turn
         guard currentTurn == playerColor else { return }
         
-        // If a position is already selected
         if let selectedPos = selectedPosition {
-            // If the selected position is in possible moves, move the piece
             if possibleMoves.contains(position) {
-                // This move has already been validated not to put or leave the king in check
-                movePiece(from: selectedPos, to: position)
-                selectedPosition = nil
-                possibleMoves = []
-                
-                // After player's move, make computer move if the game is not checkmate or stalemate
-                if gameStatus != .checkmate && gameStatus != .stalemate {
-                    makeComputerMove()
+                // Instead of moving immediately, trigger trivia challenge for human player
+                if triviaEnabled && currentTurn == playerColor {
+                    pendingMove = (from: selectedPos, to: position)
+                    showTriviaChallenge = true
+                } else {
+                    executePendingMove(from: selectedPos, to: position)
                 }
                 return
             }
             
-            // If selecting the same position, deselect it
             if selectedPos == position {
                 selectedPosition = nil
                 possibleMoves = []
@@ -142,31 +260,66 @@ class ChessGame: ObservableObject {
             }
         }
         
-        // If selecting a new position
         guard let piece = board[position.row][position.col], piece.color == currentTurn else {
-            // Can't select empty square or opponent's piece
             return
         }
         
         selectedPosition = position
-        
-        // Get valid moves and filter out those that would leave the king in check
         let allPossibleMoves = getBasicValidMoves(for: position)
         possibleMoves = allPossibleMoves.filter { !wouldMoveResultInCheck(from: position, to: $0) }
     }
     
+    // MARK: - Trivia Challenge Callbacks
+    func onTriviaSuccess() {
+        totalQuestionsAnswered += 1
+        consecutiveCorrectAnswers += 1
+        
+        if let move = pendingMove {
+            executePendingMove(from: move.from, to: move.to)
+        }
+        
+        pendingMove = nil
+        showTriviaChallenge = false
+    }
+    
+    func onTriviaFailure() {
+        totalQuestionsAnswered += 1
+        consecutiveCorrectAnswers = 0
+        
+        // Player loses their turn
+        selectedPosition = nil
+        possibleMoves = []
+        pendingMove = nil
+        showTriviaChallenge = false
+        
+        // Switch to computer turn
+        currentTurn = currentTurn.opposite
+        
+        // Make computer move after a brief delay
+        if gameStatus != .checkmate && gameStatus != .stalemate {
+            makeComputerMove()
+        }
+    }
+    
+    // MARK: - Move Execution
+    func executePendingMove(from: Position, to: Position) {
+        movePiece(from: from, to: to)
+        selectedPosition = nil
+        possibleMoves = []
+        
+        if gameStatus != .checkmate && gameStatus != .stalemate {
+            makeComputerMove()
+        }
+    }
+    
     func makeComputerMove() {
-        // Only check if it's computer's turn and game is not over (checkmate/stalemate)
         guard currentTurn == computerColor && gameStatus != .checkmate && gameStatus != .stalemate else { return }
         
-        // Show thinking indicator
         isComputerThinking = true
         
-        // Use GCD to add a small delay to make the computer's move feel more natural
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             guard let self = self else { return }
             
-            // Find all possible moves for the computer
             var allMoves: [(from: Position, to: Position)] = []
             
             for row in 0..<8 {
@@ -182,17 +335,15 @@ class ChessGame: ObservableObject {
                 }
             }
             
-            // Make a random move if possible
             if let randomMove = allMoves.randomElement() {
                 self.movePiece(from: randomMove.from, to: randomMove.to)
             }
             
-            // Hide thinking indicator
             self.isComputerThinking = false
         }
     }
     
-    // This gets the basic valid moves without checking if the king would be in check
+    // MARK: - Move Validation (keeping existing logic)
     private func getBasicValidMoves(for position: Position) -> Set<Position> {
         guard let piece = board[position.row][position.col] else { return [] }
         
@@ -220,21 +371,17 @@ class ChessGame: ObservableObject {
     func movePiece(from: Position, to: Position) {
         guard let piece = board[from.row][from.col] else { return }
         
-        // Check if this is a castling move
+        // Handle castling
         if piece.type == .king && abs(from.col - to.col) > 1 {
-            // Determine if kingside or queenside castling
             let isKingside = to.col > from.col
             
-            // Move the rook as well
             if isKingside {
-                // Kingside castling (right)
                 if var rook = board[from.row][7] {
                     rook.hasMoved = true
                     board[from.row][from.col+1] = rook
                     board[from.row][7] = nil
                 }
             } else {
-                // Queenside castling (left)
                 if var rook = board[from.row][0] {
                     rook.hasMoved = true
                     board[from.row][from.col-1] = rook
@@ -243,16 +390,14 @@ class ChessGame: ObservableObject {
             }
         }
         
-        // Check if there's a piece at the destination (capture)
+        // Handle capture
         if let capturedPiece = board[to.row][to.col] {
             capturedPieces.append(capturedPiece)
         }
         
-        // Create a copy of the piece that has moved
         var movedPiece = piece
         movedPiece.hasMoved = true
         
-        // Move the piece
         board[to.row][to.col] = movedPiece
         board[from.row][from.col] = nil
         
@@ -261,15 +406,12 @@ class ChessGame: ObservableObject {
             board[to.row][to.col] = ChessPiece(type: .queen, color: movedPiece.color)
         }
         
-        // Change turn
         currentTurn = currentTurn.opposite
-        
-        // Check game status after move
         updateGameStatus()
     }
     
+    // MARK: - Game Status and Validation (keeping existing logic)
     private func updateGameStatus() {
-        // Find kings
         var whiteKingPosition: Position?
         var blackKingPosition: Position?
         
@@ -286,17 +428,14 @@ class ChessGame: ObservableObject {
         }
         
         guard let whiteKing = whiteKingPosition, let blackKing = blackKingPosition else {
-            return // This shouldn't happen in a valid chess game
+            return
         }
         
-        // Determine if the current player is in check
         let kingPosition = currentTurn == .white ? whiteKing : blackKing
         let isInCheck = isPositionUnderAttack(position: kingPosition, by: currentTurn.opposite)
         
-        // Check if there are any legal moves available
         var hasLegalMoves = false
         
-        // For each piece of the current player
         for row in 0..<8 {
             for col in 0..<8 {
                 if let piece = board[row][col], piece.color == currentTurn {
@@ -312,7 +451,6 @@ class ChessGame: ObservableObject {
             if hasLegalMoves { break }
         }
         
-        // Update game status and kingInCheckPosition
         if isInCheck {
             kingInCheckPosition = kingPosition
             gameStatus = hasLegalMoves ? .check : .checkmate
@@ -323,7 +461,6 @@ class ChessGame: ObservableObject {
     }
     
     private func isPositionUnderAttack(position: Position, by attackingColor: ChessPieceColor) -> Bool {
-        // Check all opponent pieces to see if they can attack the given position
         for row in 0..<8 {
             for col in 0..<8 {
                 if let piece = board[row][col], piece.color == attackingColor {
@@ -338,17 +475,13 @@ class ChessGame: ObservableObject {
     }
     
     private func wouldMoveResultInCheck(from: Position, to: Position) -> Bool {
-        // Make a temporary move and check if it leaves the king in check
         guard let piece = board[from.row][from.col] else { return false }
         
-        // Save the current state
         let targetPiece = board[to.row][to.col]
         
-        // Make the move
         board[to.row][to.col] = piece
         board[from.row][from.col] = nil
         
-        // Find the king's position after the move
         var kingPosition: Position?
         for row in 0..<8 {
             for col in 0..<8 {
@@ -365,7 +498,6 @@ class ChessGame: ObservableObject {
             wouldBeInCheck = isPositionUnderAttack(position: kingPos, by: piece.color.opposite)
         }
         
-        // Restore the board
         board[from.row][from.col] = piece
         board[to.row][to.col] = targetPiece
         
@@ -377,17 +509,14 @@ class ChessGame: ObservableObject {
         return basicMoves.filter { !wouldMoveResultInCheck(from: position, to: $0) }
     }
     
-    // MARK: - Movement Logic for Different Pieces
-    
+    // MARK: - Piece Movement Logic (keeping existing implementations)
     private func getPawnMoves(from position: Position, color: ChessPieceColor, hasMoved: Bool, validMoves: inout Set<Position>) {
         let direction = color == .white ? -1 : 1
         
-        // Forward move
         let forwardRow = position.row + direction
         if Position.valid(row: forwardRow, col: position.col) && board[forwardRow][position.col] == nil {
             validMoves.insert(Position(row: forwardRow, col: position.col))
             
-            // Double forward move from starting position
             if !hasMoved {
                 let doubleForwardRow = position.row + 2 * direction
                 if Position.valid(row: doubleForwardRow, col: position.col) && board[doubleForwardRow][position.col] == nil {
@@ -396,7 +525,6 @@ class ChessGame: ObservableObject {
             }
         }
         
-        // Capture moves
         for captureCol in [position.col - 1, position.col + 1] {
             if Position.valid(row: forwardRow, col: captureCol),
                let targetPiece = board[forwardRow][captureCol],
@@ -407,7 +535,6 @@ class ChessGame: ObservableObject {
     }
     
     private func getRookMoves(from position: Position, color: ChessPieceColor, validMoves: inout Set<Position>) {
-        // Four directions: up, right, down, left
         let directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
         
         for (rowDelta, colDelta) in directions {
@@ -417,10 +544,9 @@ class ChessGame: ObservableObject {
             while Position.valid(row: currentRow, col: currentCol) {
                 if let piece = board[currentRow][currentCol] {
                     if piece.color != color {
-                        // Can capture opponent's piece
                         validMoves.insert(Position(row: currentRow, col: currentCol))
                     }
-                    break // Can't move past a piece
+                    break
                 }
                 
                 validMoves.insert(Position(row: currentRow, col: currentCol))
@@ -431,7 +557,6 @@ class ChessGame: ObservableObject {
     }
     
     private func getKnightMoves(from position: Position, color: ChessPieceColor, validMoves: inout Set<Position>) {
-        // Knight's L-shaped moves
         let moves = [
             (-2, -1), (-2, 1), (-1, -2), (-1, 2),
             (1, -2), (1, 2), (2, -1), (2, 1)
@@ -454,7 +579,6 @@ class ChessGame: ObservableObject {
     }
     
     private func getBishopMoves(from position: Position, color: ChessPieceColor, validMoves: inout Set<Position>) {
-        // Four diagonal directions
         let directions = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
         
         for (rowDelta, colDelta) in directions {
@@ -464,10 +588,9 @@ class ChessGame: ObservableObject {
             while Position.valid(row: currentRow, col: currentCol) {
                 if let piece = board[currentRow][currentCol] {
                     if piece.color != color {
-                        // Can capture opponent's piece
                         validMoves.insert(Position(row: currentRow, col: currentCol))
                     }
-                    break // Can't move past a piece
+                    break
                 }
                 
                 validMoves.insert(Position(row: currentRow, col: currentCol))
@@ -478,7 +601,6 @@ class ChessGame: ObservableObject {
     }
     
     private func getKingMoves(from position: Position, color: ChessPieceColor, validMoves: inout Set<Position>) {
-        // King can move one square in any direction
         let moves = [
             (-1, -1), (-1, 0), (-1, 1),
             (0, -1),           (0, 1),
@@ -508,11 +630,9 @@ class ChessGame: ObservableObject {
                rookRight.color == color &&
                !rookRight.hasMoved {
                 
-                // Check if squares between king and rook are empty
                 let kingsideClear = (position.col+1...6).allSatisfy { board[position.row][$0] == nil }
                 
                 if kingsideClear {
-                    // Check if king is not in check and squares king moves through are not under attack
                     let notInCheck = !isPositionUnderAttack(position: position, by: color.opposite)
                     let passThroughSafe = !isPositionUnderAttack(position: Position(row: position.row, col: position.col+1), by: color.opposite) &&
                     !isPositionUnderAttack(position: Position(row: position.row, col: position.col+2), by: color.opposite)
@@ -529,11 +649,9 @@ class ChessGame: ObservableObject {
                rookLeft.color == color &&
                !rookLeft.hasMoved {
                 
-                // Check if squares between king and rook are empty
                 let queensideClear = (1...position.col-1).allSatisfy { board[position.row][$0] == nil }
                 
                 if queensideClear {
-                    // Check if king is not in check and squares king moves through are not under attack
                     let notInCheck = !isPositionUnderAttack(position: position, by: color.opposite)
                     let passThroughSafe = !isPositionUnderAttack(position: Position(row: position.row, col: position.col-1), by: color.opposite) &&
                     !isPositionUnderAttack(position: Position(row: position.row, col: position.col-2), by: color.opposite)
@@ -547,9 +665,485 @@ class ChessGame: ObservableObject {
     }
 }
 
-// MARK: - Liquid Glass Visual Effects
+// MARK: - Chess Trivia Challenge View
 
-// Custom view modifier for Liquid Glass effect
+struct ChessTriviaChallenge: View {
+    @ObservedObject var game: ChessGame
+    @Binding var isPresented: Bool
+    
+    @StateObject private var triviaSourceManager = TriviaSourceManager.shared
+    
+    // Trivia state
+    @State private var triviaQuestion: String = ""
+    @State private var options: [String] = []
+    @State private var correctAnswer: String = ""
+    @State private var selectedAnswer: String?
+    @State private var isCorrect: Bool = false
+    @State private var hasAnswered: Bool = false
+    
+    // Timer state
+    @State private var timeRemaining: Int = 15
+    @State private var timeRemainingPrecise: Double = 15.0
+    @State private var timerStartDelay: Double = 1.0
+    @State private var timerStarted: Bool = false
+    @State private var timerExpired: Bool = false
+    private let continuousTimer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
+    
+    // Animation states
+    @State private var showFeedback: Bool = false
+    
+    // Fallback question
+    private let fallbackQuestion = "What is the most powerful piece in chess?"
+    private let fallbackOptions = ["Queen", "King", "Rook", "Bishop"]
+    private let fallbackAnswer = "Queen"
+    
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                Color.black.opacity(0.8).edgesIgnoringSafeArea(.all)
+                
+                VStack(spacing: 16) {
+                    // Header
+                    VStack(spacing: 8) {
+                        HStack {
+                            Image(systemName: "brain")
+                                .font(.title2)
+                                .foregroundColor(.blue)
+                            
+                            Text("Chess Challenge")
+                                .font(.title2.bold())
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [Color.white, Color.blue.opacity(0.8)],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                        }
+                        
+                        Text("Answer correctly to make your move")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.8))
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.top, 20)
+                    
+                    // Stats
+                    HStack(spacing: 20) {
+                        VStack {
+                            Text("\(game.consecutiveCorrectAnswers)")
+                                .font(.title2.bold())
+                                .foregroundColor(.green)
+                            Text("Streak")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.7))
+                        }
+                        
+                        VStack {
+                            Text("\(game.totalQuestionsAnswered)")
+                                .font(.title2.bold())
+                                .foregroundColor(.blue)
+                            Text("Total")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.7))
+                        }
+                    }
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 30)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.black.opacity(0.3))
+                    )
+                    
+                    // Timer
+                    timerView
+                        .padding(.horizontal, 30)
+                        .padding(.vertical, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 15)
+                                .fill(Color(red: 0.1, green: 0.1, blue: 0.2))
+                                .shadow(color: Color.blue.opacity(0.3), radius: 5)
+                        )
+                        .padding(.horizontal, 20)
+                    
+                    // Question
+                    Text(triviaQuestion.isEmpty ? "Loading question..." : triviaQuestion)
+                        .font(.system(size: 18, weight: .medium))
+                        .lineSpacing(4)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.white)
+                        .frame(minHeight: 120)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 15)
+                                .fill(Color(red: 0.1, green: 0.1, blue: 0.2))
+                        )
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 16)
+                    
+                    // Options
+                    if !options.isEmpty {
+                        VStack(spacing: 12) {
+                            ForEach(options, id: \.self) { option in
+                                Button(action: {
+                                    if !hasAnswered && !timerExpired {
+                                        selectedAnswer = option
+                                        isCorrect = option == correctAnswer
+                                        hasAnswered = true
+                                        showFeedback = true
+                                        
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                            isPresented = false
+                                            if isCorrect {
+                                                game.onTriviaSuccess()
+                                            } else {
+                                                game.onTriviaFailure()
+                                            }
+                                        }
+                                    }
+                                }) {
+                                    Text(option)
+                                        .font(.system(size: 16, weight: .medium))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 12)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 12)
+                                                .fill(getButtonBackgroundColor(for: option))
+                                        )
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 12)
+                                                .stroke(getButtonBorderColor(for: option), lineWidth: 2)
+                                        )
+                                        .foregroundColor(Color.white)
+                                }
+                                .disabled(hasAnswered || timerExpired)
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                    } else {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(1.5)
+                            .padding()
+                    }
+                    
+                    // Emergency exit button
+                    if triviaQuestion.isEmpty {
+                        Button(action: {
+                            isPresented = false
+                            game.onTriviaFailure()
+                        }) {
+                            Text("Skip Question")
+                                .font(.system(size: 16, weight: .medium))
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 10)
+                                .background(Color.red.opacity(0.7))
+                                .foregroundColor(.white)
+                                .cornerRadius(10)
+                        }
+                        .padding(.top, 20)
+                    }
+                    
+                    Spacer()
+                }
+                .padding(16)
+                .background(
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 25)
+                            .fill(Color(red: 0.08, green: 0.08, blue: 0.15))
+                            .shadow(color: .blue.opacity(0.4), radius: 15, x: 0, y: 0)
+                        
+                        RoundedRectangle(cornerRadius: 25)
+                            .strokeBorder(
+                                LinearGradient(
+                                    gradient: Gradient(colors: [
+                                        Color.blue.opacity(0.8),
+                                        Color.purple.opacity(0.6),
+                                        Color.blue.opacity(0.8)
+                                    ]),
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 2
+                            )
+                    }
+                )
+                .frame(
+                    width: min(geometry.size.width * 0.95, 440),
+                    height: min(geometry.size.height * 0.9, 650)
+                )
+                .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+            }
+        }
+        .onAppear {
+            loadTriviaQuestion()
+            
+            timeRemainingPrecise = 15.0
+            timeRemaining = 15
+            timerExpired = false
+            timerStartDelay = 1.0
+            timerStarted = false
+            
+            // Fallback after 3 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                if triviaQuestion.isEmpty {
+                    triviaQuestion = fallbackQuestion
+                    correctAnswer = fallbackAnswer
+                    options = fallbackOptions
+                }
+            }
+        }
+        .onReceive(continuousTimer) { _ in
+            if !hasAnswered && timeRemainingPrecise > 0 {
+                if !timerStarted {
+                    timerStartDelay -= 0.05
+                    if timerStartDelay <= 0 {
+                        timerStarted = true
+                    }
+                } else {
+                    timeRemainingPrecise -= 0.05
+                    timeRemaining = Int(ceil(timeRemainingPrecise))
+                    
+                    if timeRemainingPrecise <= 0 {
+                        timeRemainingPrecise = 0
+                        timerExpired = true
+                        hasAnswered = true
+                        showFeedback = true
+                        
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            isPresented = false
+                            game.onTriviaFailure()
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private var timerView: some View {
+        VStack(spacing: 6) {
+            HStack {
+                Spacer()
+                
+                HStack(spacing: 4) {
+                    Image(systemName: "clock.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(getTimerColorSmooth())
+                    
+                    Text("\(Int(timeRemainingPrecise))")
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundColor(getTimerColorSmooth())
+                }
+                
+                Spacer()
+            }
+            
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Rectangle()
+                        .frame(width: geometry.size.width, height: 10)
+                        .foregroundColor(.white.opacity(0.2))
+                        .cornerRadius(5)
+                    
+                    Rectangle()
+                        .frame(width: max(0, CGFloat(timeRemainingPrecise) / 15.0 * geometry.size.width), height: 10)
+                        .foregroundColor(getTimerColorSmooth())
+                        .cornerRadius(5)
+                }
+            }
+            .frame(height: 10)
+        }
+    }
+    
+    private func getTimerColorSmooth() -> Color {
+        if timeRemainingPrecise > 7.0 {
+            let blend = (timeRemainingPrecise - 7.0) / 3.0
+            return Color(
+                red: 0.3 + (0.3 * (1.0 - blend)),
+                green: 0.8,
+                blue: 0.3 * (1.0 - blend)
+            )
+        } else if timeRemainingPrecise > 3.0 {
+            let blend = (timeRemainingPrecise - 3.0) / 4.0
+            return Color(
+                red: 0.9 - (0.6 * blend),
+                green: 0.8,
+                blue: 0.0
+            )
+        } else {
+            let blend = timeRemainingPrecise / 3.0
+            return Color(
+                red: 0.9,
+                green: 0.8 * blend,
+                blue: 0.0
+            )
+        }
+    }
+    
+    private func getButtonBackgroundColor(for option: String) -> Color {
+        if !hasAnswered {
+            return Color(red: 0.15, green: 0.15, blue: 0.3)
+        } else if option == correctAnswer {
+            return Color.green.opacity(0.3)
+        } else if option == selectedAnswer {
+            return Color.red.opacity(0.3)
+        } else {
+            return Color(red: 0.15, green: 0.15, blue: 0.3)
+        }
+    }
+    
+    private func getButtonBorderColor(for option: String) -> Color {
+        if !hasAnswered {
+            if option == selectedAnswer {
+                return Color.blue.opacity(0.6)
+            }
+            return Color.clear
+        } else if option == correctAnswer {
+            return Color.green
+        } else if option == selectedAnswer && option != correctAnswer {
+            return Color.red
+        } else {
+            return Color.clear
+        }
+    }
+    
+    // MARK: - Trivia Loading Logic
+    private func loadTriviaQuestion() {
+        print("🎯 Loading trivia question for chess challenge")
+        
+        let selectedCategoryIds = triviaSourceManager.selectedOpenTriviaCategories
+        let availableCategories = triviaSourceManager.availableOpenTriviaCategories.filter {
+            selectedCategoryIds.contains($0.id)
+        }
+        
+        if availableCategories.isEmpty {
+            loadFromDefaultSource()
+            return
+        }
+        
+        loadFromOpenTrivia(availableCategories)
+    }
+    
+    private func loadFromOpenTrivia(_ categories: [OpenTriviaCategory]) {
+        guard !categories.isEmpty else {
+            loadFromDefaultSource()
+            return
+        }
+        
+        let source = triviaSourceManager.availableSources.first { $0.isOpenTrivia }
+        guard let openTriviaSource = source else {
+            print("❌ No OpenTrivia source found")
+            return
+        }
+        
+        print("🎯 Loading OpenTrivia questions for categories: \(categories.map { $0.name })")
+        
+        guard let data = Bundle.loadFile(named: openTriviaSource.fileResource, withExtension: openTriviaSource.fileExtension) else {
+            print("❌ Failed to load OpenTrivia data")
+            loadFromDefaultSource()
+            return
+        }
+        
+        guard let questionsWithCategories = decodeQuestionsWithCategories(from: data) else {
+            print("❌ Failed to decode questions with categories")
+            loadFromDefaultSource()
+            return
+        }
+        
+        print("✅ Loaded \(questionsWithCategories.count) total questions")
+        
+        let selectedCategoryNames = Set(categories.map { $0.name })
+        let filteredQuestions = questionsWithCategories.filter { question in
+            selectedCategoryNames.contains(question.category)
+        }
+        
+        print("🎯 Filtered to \(filteredQuestions.count) questions from selected categories")
+        
+        if filteredQuestions.isEmpty {
+            print("⚠️ No questions found for selected categories")
+            if let randomQuestion = questionsWithCategories.randomElement() {
+                print("🔄 Using fallback question from: \(randomQuestion.category)")
+                setQuestion(randomQuestion.toTriviaQuestion())
+            } else {
+                loadFromDefaultSource()
+            }
+        } else {
+            if let randomQuestion = filteredQuestions.randomElement() {
+                print("✅ Selected question from category: \(randomQuestion.category)")
+                setQuestion(randomQuestion.toTriviaQuestion())
+            } else {
+                loadFromDefaultSource()
+            }
+        }
+    }
+    
+    private func decodeQuestionsWithCategories(from data: Data) -> [TriviaQuestionWithCategory]? {
+        do {
+            let questions = try JSONDecoder().decode([TriviaQuestionWithCategory].self, from: data)
+            print("✅ Decoded as TriviaQuestionWithCategory array with \(questions.count) questions")
+            return questions
+        } catch {
+            print("❌ TriviaQuestionWithCategory decode failed: \(error)")
+            return nil
+        }
+    }
+    
+    private func loadFromDefaultSource() {
+        print("🎯 Loading from default fallback source")
+        
+        let fallbackSource = triviaSourceManager.availableSources.first ?? TriviaSource(
+            id: "fallback",
+            name: "General Knowledge",
+            description: "Fallback questions",
+            fileResource: "opentrivia",
+            fileExtension: "json",
+            isOpenTrivia: true
+        )
+        
+        guard let data = Bundle.loadFile(named: fallbackSource.fileResource, withExtension: fallbackSource.fileExtension) else {
+            print("❌ Even fallback source failed to load")
+            return
+        }
+        
+        if let questions = decodeQuestions(from: data) {
+            if let randomQuestion = questions.randomElement() {
+                setQuestion(randomQuestion)
+            }
+        }
+    }
+    
+    private func decodeQuestions(from data: Data) -> [TriviaQuestion]? {
+        do {
+            let response = try JSONDecoder().decode(TriviaResponse.self, from: data)
+            print("✅ Decoded as TriviaResponse format with \(response.questions.count) questions")
+            return response.questions
+        } catch {
+            print("⚠️ TriviaResponse decode failed: \(error)")
+        }
+        
+        do {
+            let questions = try JSONDecoder().decode([TriviaQuestion].self, from: data)
+            print("✅ Decoded as direct TriviaQuestion array with \(questions.count) questions")
+            return questions
+        } catch {
+            print("❌ Direct TriviaQuestion array decode failed: \(error)")
+        }
+        
+        return nil
+    }
+    
+    private func setQuestion(_ question: TriviaQuestion) {
+        triviaQuestion = question.question
+        correctAnswer = question.correct_answer
+        options = (question.incorrect_answers + [question.correct_answer]).shuffled()
+        print("🎯 Question set: \(triviaQuestion.prefix(50))...")
+        print("🎯 Options count: \(options.count)")
+    }
+}
+
+// MARK: - Liquid Glass Visual Effects (keeping existing)
+
 struct LiquidGlassEffect: ViewModifier {
     let intensity: Double
     let tint: Color?
@@ -597,16 +1191,14 @@ extension View {
     }
 }
 
-// MARK: - SwiftUI Views
+// MARK: - Main Content View (Enhanced)
 
 struct ContentView: View {
     @StateObject private var game = ChessGame()
     @State private var backgroundOffset: CGSize = .zero
     
-    // Dynamic background that responds to game state
     var dynamicBackground: some View {
         ZStack {
-            // Base gradient that changes based on game state
             LinearGradient(
                 colors: gameBackgroundColors,
                 startPoint: .topLeading,
@@ -614,7 +1206,6 @@ struct ContentView: View {
             )
             .ignoresSafeArea()
             
-            // Animated floating orbs for depth
             ForEach(0..<6, id: \.self) { index in
                 Circle()
                     .fill(
@@ -668,34 +1259,32 @@ struct ContentView: View {
             ZStack {
                 dynamicBackground
                 
-                VStack(spacing: 16) { // Increased spacing for a better layout
-                    // Status card with liquid glass effect
+                VStack(spacing: 16) {
                     statusCard
                     
-                    // White pieces captured by Black
                     CapturedPiecesView(pieces: game.capturedPieces.filter { $0.color == .white })
                         .padding(.horizontal)
                     
-                    // Chess board with enhanced liquid glass styling
                     ChessBoardView(game: game)
                         .liquidGlass()
                         .scaleEffect(game.gameStatus == .checkmate ? 1.02 : 1.0)
                         .animation(.spring(response: 0.6, dampingFraction: 0.7), value: game.gameStatus)
                     
-                    // Black pieces captured by White
                     CapturedPiecesView(pieces: game.capturedPieces.filter { $0.color == .black })
                         .padding(.horizontal)
                     
-                    Spacer() // Pushes the game controls to the bottom
+                    Spacer()
                     
-                    // Game controls
                     gameControls
                         .padding(.horizontal)
                 }
                 .padding(.vertical)
             }
-            .navigationTitle("Chess vs Computer")
+            .navigationTitle("Chess with Trivia")
             .navigationBarTitleDisplayMode(.large)
+        }
+        .fullScreenCover(isPresented: $game.showTriviaChallenge) {
+            ChessTriviaChallenge(game: game, isPresented: $game.showTriviaChallenge)
         }
     }
     
@@ -723,7 +1312,7 @@ struct ContentView: View {
                     .font(.title3)
                     .fontWeight(.semibold)
                     .foregroundColor(.orange)
-            } else { // Ongoing
+            } else {
                 HStack(spacing: 8) {
                     Text(game.currentTurn == .white ? "White" : "Black")
                         .font(.title3)
@@ -735,6 +1324,28 @@ struct ContentView: View {
                             .scaleEffect(0.8)
                     }
                 }
+            }
+            
+            // Trivia stats
+            if game.totalQuestionsAnswered > 0 {
+                HStack(spacing: 16) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "brain")
+                            .foregroundColor(.blue)
+                        Text("Streak: \(game.consecutiveCorrectAnswers)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    HStack(spacing: 4) {
+                        Image(systemName: "questionmark.circle")
+                            .foregroundColor(.green)
+                        Text("Total: \(game.totalQuestionsAnswered)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.top, 4)
             }
         }
         .padding(.vertical, 12)
@@ -772,6 +1383,31 @@ struct ContentView: View {
             .foregroundColor(.primary)
             .scaleEffect(game.gameStatus == .checkmate ? 1.1 : 1.0)
             .animation(.spring(response: 0.5, dampingFraction: 0.6), value: game.gameStatus)
+            
+            Button(action: {
+                game.triviaEnabled.toggle()
+            }) {
+                HStack {
+                    Image(systemName: game.triviaEnabled ? "brain.head.profile" : "brain.head.profile.fill")
+                    Text(game.triviaEnabled ? "Trivia ON" : "Trivia OFF")
+                        .fontWeight(.medium)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(
+                    game.triviaEnabled ?
+                    Color.blue.opacity(0.2) : Color.gray.opacity(0.2),
+                    in: RoundedRectangle(cornerRadius: 25)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 25)
+                        .stroke(
+                            game.triviaEnabled ? Color.blue.opacity(0.6) : Color.gray.opacity(0.6),
+                            lineWidth: 1
+                        )
+                )
+            }
+            .foregroundColor(game.triviaEnabled ? .blue : .gray)
         }
     }
     
@@ -779,6 +1415,8 @@ struct ContentView: View {
         game.reset()
     }
 }
+
+// MARK: - Chess Board and Cell Views (keeping existing implementations)
 
 struct ChessBoardView: View {
     @ObservedObject var game: ChessGame
@@ -841,16 +1479,14 @@ struct ChessCellView: View {
     let isPossibleMove: Bool
     let isKingInCheck: Bool
     
-    // Enhanced color scheme with liquid glass effects
     var cellBaseColor: Color {
         (row + col) % 2 == 0 ?
-        Color(red: 0.8, green: 0.82, blue: 0.85) : // Darker light squares
-        Color(red: 0.5, green: 0.55, blue: 0.6)   // Darker dark squares
+        Color(red: 0.8, green: 0.82, blue: 0.85) :
+        Color(red: 0.5, green: 0.55, blue: 0.6)
     }
     
     var body: some View {
         ZStack {
-            // Base cell with liquid glass effect
             RoundedRectangle(cornerRadius: 8)
                 .fill(cellBaseColor)
                 .overlay(
@@ -868,13 +1504,11 @@ struct ChessCellView: View {
                         )
                 )
             
-            // Check highlight (New Style)
             if isKingInCheck {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(Color.orange.opacity(0.8), lineWidth: 3)
             }
             
-            // Selection highlight with liquid glass glow
             if isSelected {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(
@@ -897,7 +1531,6 @@ struct ChessCellView: View {
                     .animation(.easeInOut(duration: 0.3), value: isSelected)
             }
             
-            // Possible move indicator - a subtle glow on the square
             if isPossibleMove {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(Color(red: 0.6, green: 0.85, blue: 0.95), lineWidth: 2)
@@ -906,7 +1539,6 @@ struct ChessCellView: View {
                     .animation(.easeInOut(duration: 0.3), value: isPossibleMove)
             }
             
-            // Chess piece with enhanced 3D effect
             if let piece = piece {
                 ChessPieceView(piece: piece, size: 36)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -923,19 +1555,16 @@ struct ChessPieceView: View {
 
     var body: some View {
         ZStack {
-            // Shadow layer for depth
             Text(piece.symbol)
                 .font(.system(size: size, weight: .black, design: .default))
                 .foregroundColor(.black.opacity(0.3))
                 .offset(x: 2, y: 2)
                 .blur(radius: 1)
         
-            // Main piece with liquid glass reflection
             Text(piece.symbol)
                 .font(.system(size: size, weight: .black, design: .default))
                 .foregroundColor(piece.color == .white ? .white : .black)
                 .overlay(
-                    // Glass-like highlight
                     Text(piece.symbol)
                         .font(.system(size: size, weight: .black, design: .default))
                         .foregroundColor(.white.opacity(0.6))
@@ -962,9 +1591,6 @@ struct CapturedPiecesView: View {
                     .opacity(0.8)
             }
         }
-        .frame(height: 25) // Use a fixed height to prevent layout from shifting when pieces are captured.
+        .frame(height: 25)
     }
 }
-
-
-
